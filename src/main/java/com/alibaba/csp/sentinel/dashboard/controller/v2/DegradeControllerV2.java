@@ -52,10 +52,11 @@ public class DegradeControllerV2 {
     private SentinelApiClient sentinelApiClient;*/
 
     @Autowired
-    @Qualifier("flowRuleZookeeperProvider")
+    @Qualifier("degradeRuleZookeeperProvider")
     private DynamicRuleProvider<List<DegradeRuleEntity>> ruleProvider;
+
     @Autowired
-    @Qualifier("flowRuleZookeeperPublisher")
+    @Qualifier("degradeRuleZookeeperPublisher")
     private DynamicRulePublisher<List<DegradeRuleEntity>> rulePublisher;
 
     @ResponseBody
