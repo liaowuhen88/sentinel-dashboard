@@ -17,6 +17,7 @@ package com.alibaba.csp.sentinel.dashboard.controller.v2;
 
 import com.alibaba.csp.sentinel.dashboard.auth.AuthAction;
 import com.alibaba.csp.sentinel.dashboard.auth.AuthService.PrivilegeType;
+import com.alibaba.csp.sentinel.dashboard.controller.DegradeController;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.DegradeRuleEntity;
 import com.alibaba.csp.sentinel.dashboard.discovery.MachineInfo;
 import com.alibaba.csp.sentinel.dashboard.domain.Result;
@@ -43,13 +44,10 @@ import java.util.List;
 @Controller
 @RequestMapping(value = "/v2/degrade", produces = MediaType.APPLICATION_JSON_VALUE)
 public class DegradeControllerV2 {
-
-    private final Logger logger = LoggerFactory.getLogger(DegradeControllerV2.class);
+    private final Logger logger = LoggerFactory.getLogger(DegradeController.class);
 
     @Autowired
     private InMemDegradeRuleStore repository;
-  /*  @Autowired
-    private SentinelApiClient sentinelApiClient;*/
 
     @Autowired
     @Qualifier("degradeRuleZookeeperProvider")
@@ -75,7 +73,6 @@ public class DegradeControllerV2 {
         }
         try {
             List<DegradeRuleEntity> rules = ruleProvider.getRules(getRealPath(app));
-            //List<DegradeRuleEntity> rules = sentinelApiClient.fetchDegradeRuleOfMachine(app, ip, port);
             rules = repository.saveAll(rules);
             return Result.ofSuccess(rules);
         } catch (Throwable throwable) {
@@ -88,7 +85,7 @@ public class DegradeControllerV2 {
     @RequestMapping("/new.json")
     @AuthAction(PrivilegeType.WRITE_RULE)
     public Result<DegradeRuleEntity> add(String app, String ip, Integer port, String limitApp, String resource,
-                                         Double count, Integer timeWindow, Integer grade) {
+                                         Double count, Integer timeWindow, Integer grade) throws Exception {
         if (StringUtil.isBlank(app)) {
             return Result.ofFail(-1, "app can't be null or empty");
         }
@@ -129,6 +126,7 @@ public class DegradeControllerV2 {
             logger.error("add error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
+        publishRules(app, ip, port);
         return Result.ofSuccess(entity);
     }
 
@@ -136,7 +134,7 @@ public class DegradeControllerV2 {
     @RequestMapping("/save.json")
     @AuthAction(PrivilegeType.WRITE_RULE)
     public Result<DegradeRuleEntity> updateIfNotNull(Long id, String app, String limitApp, String resource,
-                                                     Double count, Integer timeWindow, Integer grade) {
+                                                     Double count, Integer timeWindow, Integer grade) throws Exception {
         if (id == null) {
             return Result.ofFail(-1, "id can't be null");
         }
@@ -177,13 +175,15 @@ public class DegradeControllerV2 {
             logger.error("save error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
+        publishRules(entity.getApp(), entity.getIp(), entity.getPort());
+
         return Result.ofSuccess(entity);
     }
 
     @ResponseBody
     @RequestMapping("/delete.json")
     @AuthAction(PrivilegeType.DELETE_RULE)
-    public Result<Long> delete(Long id) {
+    public Result<Long> delete(Long id) throws Exception {
         if (id == null) {
             return Result.ofFail(-1, "id can't be null");
         }
@@ -199,12 +199,13 @@ public class DegradeControllerV2 {
             logger.error("delete error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
+        publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort());
         return Result.ofSuccess(id);
     }
 
     private void publishRules(String app, String ip, Integer port) throws Exception {
         List<DegradeRuleEntity> rules = repository.findAllByMachine(MachineInfo.of(app, ip, port));
-        rulePublisher.publish(app, rules);
+        rulePublisher.publish(getRealPath(app), rules);
         //return sentinelApiClient.setDegradeRuleOfMachine(app, ip, port, rules);
     }
 
