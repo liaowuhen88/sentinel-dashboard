@@ -38,4 +38,20 @@ public class ZookeeperConfigUtil {
         }
         return stringBuilder.toString();
     }
+
+    public static String getPath(String appName,String ruleType) {
+        StringBuilder stringBuilder = new StringBuilder(RULE_ROOT_PATH);
+
+        if (StringUtils.isBlank(appName)) {
+            return stringBuilder.toString();
+        }
+        if (appName.startsWith("/")) {
+            stringBuilder.append(appName);
+        } else {
+            stringBuilder.append("/")
+                    .append(appName);
+        }
+        stringBuilder.append("/").append(ruleType);
+        return stringBuilder.toString();
+    }
 }

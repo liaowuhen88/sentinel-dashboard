@@ -15,36 +15,38 @@
  */
 package com.alibaba.csp.sentinel.dashboard.rule.zookeeper;
 
+import com.alibaba.csp.sentinel.dashboard.controller.v2.FlowControllerV2;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.FlowRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.rule.DynamicRulePublisher;
+import com.alibaba.csp.sentinel.dashboard.rule.DynamicRuleProvider;
 import com.alibaba.csp.sentinel.datasource.Converter;
-import com.alibaba.csp.sentinel.util.AssertUtil;
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.data.Stat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 
-@Component("flowRuleZookeeperPublisher")
-public class FlowRuleZookeeperPublisher implements DynamicRulePublisher<List<FlowRuleEntity>> {
+@Component("flowRuleZookeeperProvider")
+public class FlowRuleZookeeperProvider implements DynamicRuleProvider<List<FlowRuleEntity>> {
+    private final Logger logger = LoggerFactory.getLogger(this.getClass());
     @Autowired
     private CuratorFramework zkClient;
     @Autowired
-    private Converter<List<FlowRuleEntity>, String> converter;
+    private Converter<String, List<FlowRuleEntity>> converter;
 
     @Override
-    public void publish(String app, List<FlowRuleEntity> rules) throws Exception {
-        AssertUtil.notEmpty(app, "app name cannot be empty");
-
-        String path = ZookeeperConfigUtil.getPath(app);
-        Stat stat = zkClient.checkExists().forPath(path);
-        if (stat == null) {
-            zkClient.create().creatingParentContainersIfNeeded().withMode(CreateMode.PERSISTENT).forPath(path, null);
+    public List<FlowRuleEntity> getRules(String appName) throws Exception {
+        //appName = "/sentinel/FlowRule";
+        String zkPath = ZookeeperConfigUtil.getPath(appName,"flowRule");
+        logger.info("zkPath:{}",zkPath);
+        byte[] bytes = zkClient.getData().forPath(zkPath);
+        if (null == bytes || bytes.length == 0) {
+            return new ArrayList<>();
         }
-        byte[] data = CollectionUtils.isEmpty(rules) ? "[]".getBytes() : converter.convert(rules).getBytes();
-        zkClient.setData().forPath(path, data);
+        String s = new String(bytes);
+
+        return converter.convert(s);
     }
 }
