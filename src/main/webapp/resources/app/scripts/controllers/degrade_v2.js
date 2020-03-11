@@ -1,7 +1,7 @@
 var app = angular.module('sentinelDashboardApp');
 
-app.controller('DegradeControllerV2', ['$scope', '$stateParams', 'DegradeService', 'ngDialog', 'MachineService',
-  function ($scope, $stateParams, DegradeService, ngDialog, MachineService) {
+app.controller('DegradeControllerV2', ['$scope', '$stateParams', 'DegradeServiceV2', 'ngDialog', 'MachineService',
+  function ($scope, $stateParams, DegradeServiceV2, ngDialog, MachineService) {
     //初始化
     $scope.app = $stateParams.app;
     $scope.rulesPageConfig = {
@@ -30,7 +30,7 @@ app.controller('DegradeControllerV2', ['$scope', '$stateParams', 'DegradeService
         return;
       }
       var mac = $scope.macInputModel.split(':');
-      DegradeService.queryMachineRules($scope.app, mac[0], mac[1]).success(
+      DegradeServiceV2.queryMachineRules($scope.app, mac[0], mac[1]).success(
         function (data) {
           if (data.code == 0 && data.data) {
             $scope.rules = data.data;
@@ -82,7 +82,7 @@ app.controller('DegradeControllerV2', ['$scope', '$stateParams', 'DegradeService
     };
 
     $scope.saveRule = function () {
-      if (!DegradeService.checkRuleValid($scope.currentRule)) {
+      if (!DegradeServiceV2.checkRuleValid($scope.currentRule)) {
         return;
       }
       if ($scope.degradeRuleDialog.type === 'add') {
@@ -132,7 +132,7 @@ app.controller('DegradeControllerV2', ['$scope', '$stateParams', 'DegradeService
     };
 
     function deleteRule(rule) {
-      DegradeService.deleteRule(rule).success(function (data) {
+      DegradeServiceV2.deleteRule(rule).success(function (data) {
         if (data.code == 0) {
           getMachineRules();
           confirmDialog.close();
@@ -143,7 +143,7 @@ app.controller('DegradeControllerV2', ['$scope', '$stateParams', 'DegradeService
     };
 
     function addNewRule(rule) {
-      DegradeService.newRule(rule).success(function (data) {
+      DegradeServiceV2.newRule(rule).success(function (data) {
         if (data.code == 0) {
           getMachineRules();
           degradeRuleDialog.close();
@@ -154,7 +154,7 @@ app.controller('DegradeControllerV2', ['$scope', '$stateParams', 'DegradeService
     };
 
     function saveRule(rule, edit) {
-      DegradeService.saveRule(rule).success(function (data) {
+      DegradeServiceV2.saveRule(rule).success(function (data) {
         if (data.code == 0) {
           getMachineRules();
           if (edit) {
