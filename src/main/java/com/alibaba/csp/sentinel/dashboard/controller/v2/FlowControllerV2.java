@@ -150,7 +150,6 @@ public class FlowControllerV2 {
 
     @PutMapping("/rule/{id}")
     @AuthAction(AuthService.PrivilegeType.WRITE_RULE)
-
     public Result<FlowRuleEntity> apiUpdateFlowRule(@PathVariable("id") Long id,
                                                     @RequestBody FlowRuleEntity entity) {
         if (id == null || id <= 0) {
@@ -210,8 +209,8 @@ public class FlowControllerV2 {
     }
 
     private void publishRules(/*@NonNull*/ String app) throws Exception {
-        List<FlowRuleEntity> rules = repository.findAllByApp(getRealPath(app));
-        rulePublisher.publish(app, rules);
+        List<FlowRuleEntity> rules = repository.findAllByApp(app);
+        rulePublisher.publish(getRealPath(app), rules);
     }
 
     private String getRealPath(String app) {
