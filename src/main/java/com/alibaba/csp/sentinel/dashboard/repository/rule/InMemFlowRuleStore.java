@@ -15,11 +15,9 @@
  */
 package com.alibaba.csp.sentinel.dashboard.repository.rule;
 
-import java.util.concurrent.atomic.AtomicLong;
-
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.FlowRuleEntity;
+import com.alibaba.csp.sentinel.dashboard.util.IdWorker;
 import com.alibaba.csp.sentinel.slots.block.flow.ClusterFlowConfig;
-
 import org.springframework.stereotype.Component;
 
 /**
@@ -30,11 +28,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class InMemFlowRuleStore extends InMemoryRuleRepositoryAdapter<FlowRuleEntity> {
 
-    private static AtomicLong ids = new AtomicLong(0);
+    private static IdWorker worker = new IdWorker(1, 1, 1);
 
     @Override
     protected long nextId() {
-        return ids.incrementAndGet();
+        return worker.nextId();
     }
 
     @Override

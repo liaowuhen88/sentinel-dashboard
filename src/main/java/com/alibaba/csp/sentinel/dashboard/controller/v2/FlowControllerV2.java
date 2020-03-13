@@ -20,9 +20,10 @@ import com.alibaba.csp.sentinel.dashboard.auth.AuthService;
 import com.alibaba.csp.sentinel.dashboard.auth.AuthService.PrivilegeType;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.FlowRuleEntity;
 import com.alibaba.csp.sentinel.dashboard.domain.Result;
-import com.alibaba.csp.sentinel.dashboard.repository.rule.InMemoryRuleRepositoryAdapter;
+import com.alibaba.csp.sentinel.dashboard.repository.rule.InMemFlowRuleStore;
 import com.alibaba.csp.sentinel.dashboard.rule.DynamicRuleProvider;
 import com.alibaba.csp.sentinel.dashboard.rule.DynamicRulePublisher;
+import com.alibaba.csp.sentinel.dashboard.util.IdWorkerUtils;
 import com.alibaba.csp.sentinel.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,8 +31,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Flow rule controller (v2).
@@ -46,7 +50,7 @@ public class FlowControllerV2 {
     private final Logger logger = LoggerFactory.getLogger(FlowControllerV2.class);
 
     @Autowired
-    private InMemoryRuleRepositoryAdapter<FlowRuleEntity> repository;
+    private InMemFlowRuleStore repositorys;
 
     @Autowired
     @Qualifier("flowRuleZookeeperProvider")
@@ -64,15 +68,6 @@ public class FlowControllerV2 {
         }
         try {
             List<FlowRuleEntity> rules = ruleProvider.getRules(getRealPath(app));
-            if (rules != null && !rules.isEmpty()) {
-                for (FlowRuleEntity entity : rules) {
-                    entity.setApp(app);
-                    if (entity.getClusterConfig() != null && entity.getClusterConfig().getFlowId() != null) {
-                        entity.setId(entity.getClusterConfig().getFlowId());
-                    }
-                }
-            }
-            rules = repository.saveAll(rules);
             return Result.ofSuccess(rules);
         } catch (Throwable throwable) {
             logger.error("Error when querying flow rules", throwable);
@@ -132,15 +127,15 @@ public class FlowControllerV2 {
         if (checkResult != null) {
             return checkResult;
         }
-        entity.setId(null);
+        entity.setId(IdWorkerUtils.nextId());
         Date date = new Date();
         entity.setGmtCreate(date);
         entity.setGmtModified(date);
         entity.setLimitApp(entity.getLimitApp().trim());
         entity.setResource(entity.getResource().trim());
         try {
-            entity = repository.save(entity);
-            publishRules(entity.getApp());
+            List<FlowRuleEntity> rules = addFlowRuleEntity(entity);
+            publishRules(entity.getApp(), rules);
         } catch (Throwable throwable) {
             logger.error("Failed to add flow rule", throwable);
             return Result.ofThrowable(-1, throwable);
@@ -151,11 +146,12 @@ public class FlowControllerV2 {
     @PutMapping("/rule/{id}")
     @AuthAction(AuthService.PrivilegeType.WRITE_RULE)
     public Result<FlowRuleEntity> apiUpdateFlowRule(@PathVariable("id") Long id,
-                                                    @RequestBody FlowRuleEntity entity) {
+                                                    @RequestBody FlowRuleEntity entity) throws Exception {
         if (id == null || id <= 0) {
             return Result.ofFail(-1, "Invalid id");
         }
-        FlowRuleEntity oldEntity = repository.findById(id);
+        entity.setId(id);
+        FlowRuleEntity oldEntity = getFlowRuleEntity(entity);
         if (oldEntity == null) {
             return Result.ofFail(-1, "id " + id + " does not exist");
         }
@@ -171,16 +167,16 @@ public class FlowControllerV2 {
             return checkResult;
         }
 
-        entity.setId(id);
+
         Date date = new Date();
         entity.setGmtCreate(oldEntity.getGmtCreate());
         entity.setGmtModified(date);
         try {
-            entity = repository.save(entity);
             if (entity == null) {
                 return Result.ofFail(-1, "save entity fail");
             }
-            publishRules(oldEntity.getApp());
+            List<FlowRuleEntity> rules = addFlowRuleEntity(entity);
+            publishRules(oldEntity.getApp(), rules);
         } catch (Throwable throwable) {
             logger.error("Failed to update flow rule", throwable);
             return Result.ofThrowable(-1, throwable);
@@ -188,29 +184,53 @@ public class FlowControllerV2 {
         return Result.ofSuccess(entity);
     }
 
-    @DeleteMapping("/rule/{id}")
+    @DeleteMapping("/rule/{id}/{app}")
     @AuthAction(PrivilegeType.DELETE_RULE)
-    public Result<Long> apiDeleteRule(@PathVariable("id") Long id) {
+    public Result<Long> apiDeleteRule(@PathVariable("app") String app, @PathVariable("id") Long id) {
         if (id == null || id <= 0) {
             return Result.ofFail(-1, "Invalid id");
         }
-        FlowRuleEntity oldEntity = repository.findById(id);
-        if (oldEntity == null) {
-            return Result.ofSuccess(null);
-        }
-
         try {
-            repository.delete(id);
-            publishRules(oldEntity.getApp());
+            List<FlowRuleEntity> rules = deleteFlowRuleEntity(app, id);
+            publishRules(app, rules);
         } catch (Exception e) {
             return Result.ofFail(-1, e.getMessage());
         }
         return Result.ofSuccess(id);
     }
 
-    private void publishRules(/*@NonNull*/ String app) throws Exception {
-        List<FlowRuleEntity> rules = repository.findAllByApp(app);
+    private void publishRules(/*@NonNull*/ String app, List<FlowRuleEntity> rules) throws Exception {
         rulePublisher.publish(getRealPath(app), rules);
+    }
+
+    private List<FlowRuleEntity> addFlowRuleEntity(/*@NonNull*/ FlowRuleEntity entity) throws Exception {
+        //需要设置id
+        List<FlowRuleEntity> rules = ruleProvider.getRules(getRealPath(entity.getApp()));
+        Map<Long, FlowRuleEntity> map = rules.stream().collect(
+                Collectors.toMap(FlowRuleEntity::getId, (p) -> p));
+        if (null == entity.getId()) {
+            entity.setId(IdWorkerUtils.nextId());
+        }
+        map.put(entity.getId(), entity);
+
+        return new ArrayList<>(map.values());
+    }
+
+    private List<FlowRuleEntity> deleteFlowRuleEntity(/*@NonNull*/ String app, Long id) throws Exception {
+        //需要设置id
+        List<FlowRuleEntity> rules = ruleProvider.getRules(getRealPath(app));
+        Map<Long, FlowRuleEntity> map = rules.stream().collect(
+                Collectors.toMap(FlowRuleEntity::getId, (p) -> p));
+        map.remove(id);
+        return new ArrayList<>(map.values());
+    }
+
+    private FlowRuleEntity getFlowRuleEntity(FlowRuleEntity entity) throws Exception {
+        //需要设置id
+        List<FlowRuleEntity> rules = ruleProvider.getRules(getRealPath(entity.getApp()));
+        Map<Long, FlowRuleEntity> map = rules.stream().collect(
+                Collectors.toMap(FlowRuleEntity::getId, (p) -> p));
+        return map.get(entity.getId());
     }
 
     private String getRealPath(String app) {
