@@ -219,10 +219,8 @@ public class FlowControllerV2 {
     private List<FlowRuleEntity> deleteFlowRuleEntity(/*@NonNull*/ String app, Long id) throws Exception {
         //需要设置id
         List<FlowRuleEntity> rules = ruleProvider.getRules(getRealPath(app));
-        Map<Long, FlowRuleEntity> map = rules.stream().collect(
-                Collectors.toMap(FlowRuleEntity::getId, (p) -> p));
-        map.remove(id);
-        return new ArrayList<>(map.values());
+        rules.removeIf(p -> id.equals(p.getId()));//过滤30岁以上的求职者
+        return rules;
     }
 
     private FlowRuleEntity getFlowRuleEntity(FlowRuleEntity entity) throws Exception {
