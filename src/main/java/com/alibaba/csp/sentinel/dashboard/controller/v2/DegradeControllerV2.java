@@ -19,11 +19,10 @@ import com.alibaba.csp.sentinel.dashboard.auth.AuthAction;
 import com.alibaba.csp.sentinel.dashboard.auth.AuthService.PrivilegeType;
 import com.alibaba.csp.sentinel.dashboard.controller.DegradeController;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.DegradeRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.discovery.MachineInfo;
 import com.alibaba.csp.sentinel.dashboard.domain.Result;
-import com.alibaba.csp.sentinel.dashboard.repository.rule.InMemDegradeRuleStore;
 import com.alibaba.csp.sentinel.dashboard.rule.DynamicRuleProvider;
 import com.alibaba.csp.sentinel.dashboard.rule.DynamicRulePublisher;
+import com.alibaba.csp.sentinel.dashboard.util.IdWorkerUtils;
 import com.alibaba.csp.sentinel.slots.block.RuleConstant;
 import com.alibaba.csp.sentinel.util.StringUtil;
 import org.slf4j.Logger;
@@ -35,8 +34,11 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * @author leyou
@@ -45,9 +47,6 @@ import java.util.List;
 @RequestMapping(value = "/v2/degrade", produces = MediaType.APPLICATION_JSON_VALUE)
 public class DegradeControllerV2 {
     private final Logger logger = LoggerFactory.getLogger(DegradeController.class);
-
-    @Autowired
-    private InMemDegradeRuleStore repository;
 
     @Autowired
     @Qualifier("degradeRuleZookeeperProvider")
@@ -73,7 +72,6 @@ public class DegradeControllerV2 {
         }
         try {
             List<DegradeRuleEntity> rules = ruleProvider.getRules(getRealPath(app));
-            rules = repository.saveAll(rules);
             return Result.ofSuccess(rules);
         } catch (Throwable throwable) {
             logger.error("queryApps error:", throwable);
@@ -120,13 +118,8 @@ public class DegradeControllerV2 {
         Date date = new Date();
         entity.setGmtCreate(date);
         entity.setGmtModified(date);
-        try {
-            entity = repository.save(entity);
-        } catch (Throwable throwable) {
-            logger.error("add error:", throwable);
-            return Result.ofThrowable(-1, throwable);
-        }
-        publishRules(app, ip, port);
+        List<DegradeRuleEntity> rules = addFlowRuleEntity(entity);
+        publishRules(app, rules);
         return Result.ofSuccess(entity);
     }
 
@@ -143,7 +136,7 @@ public class DegradeControllerV2 {
                 return Result.ofFail(-1, "Invalid grade: " + grade);
             }
         }
-        DegradeRuleEntity entity = repository.findById(id);
+        DegradeRuleEntity entity = getDegradeRuleEntity(app, id);
         if (entity == null) {
             return Result.ofFail(-1, "id " + id + " dose not exist");
         }
@@ -169,13 +162,8 @@ public class DegradeControllerV2 {
         }
         Date date = new Date();
         entity.setGmtModified(date);
-        try {
-            entity = repository.save(entity);
-        } catch (Throwable throwable) {
-            logger.error("save error:", throwable);
-            return Result.ofThrowable(-1, throwable);
-        }
-        publishRules(entity.getApp(), entity.getIp(), entity.getPort());
+        List<DegradeRuleEntity> rules = addFlowRuleEntity(entity);
+        publishRules(entity.getApp(), rules);
 
         return Result.ofSuccess(entity);
     }
@@ -183,30 +171,51 @@ public class DegradeControllerV2 {
     @ResponseBody
     @RequestMapping("/delete.json")
     @AuthAction(PrivilegeType.DELETE_RULE)
-    public Result<Long> delete(Long id) throws Exception {
+    public Result<Long> delete(String app, Long id) throws Exception {
         if (id == null) {
             return Result.ofFail(-1, "id can't be null");
         }
 
-        DegradeRuleEntity oldEntity = repository.findById(id);
+        DegradeRuleEntity oldEntity = getDegradeRuleEntity(app, id);
         if (oldEntity == null) {
             return Result.ofSuccess(null);
         }
-
-        try {
-            repository.delete(id);
-        } catch (Throwable throwable) {
-            logger.error("delete error:", throwable);
-            return Result.ofThrowable(-1, throwable);
-        }
-        publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort());
+        List<DegradeRuleEntity> ruls = deleteFlowRuleEntity(app, id);
+        publishRules(oldEntity.getApp(), ruls);
         return Result.ofSuccess(id);
     }
 
-    private void publishRules(String app, String ip, Integer port) throws Exception {
-        List<DegradeRuleEntity> rules = repository.findAllByMachine(MachineInfo.of(app, ip, port));
+    private void publishRules(String app, List<DegradeRuleEntity> rules) throws Exception {
         rulePublisher.publish(getRealPath(app), rules);
         //return sentinelApiClient.setDegradeRuleOfMachine(app, ip, port, rules);
+    }
+
+    private List<DegradeRuleEntity> addFlowRuleEntity(/*@NonNull*/ DegradeRuleEntity entity) throws Exception {
+        //需要设置id
+        List<DegradeRuleEntity> rules = ruleProvider.getRules(getRealPath(entity.getApp()));
+        Map<Long, DegradeRuleEntity> map = rules.stream().collect(
+                Collectors.toMap(DegradeRuleEntity::getId, (p) -> p));
+        if (null == entity.getId()) {
+            entity.setId(IdWorkerUtils.nextId());
+        }
+        map.put(entity.getId(), entity);
+
+        return new ArrayList<>(map.values());
+    }
+
+    private DegradeRuleEntity getDegradeRuleEntity(String app, Long id) throws Exception {
+        //需要设置id
+        List<DegradeRuleEntity> rules = ruleProvider.getRules(getRealPath(app));
+        Map<Long, DegradeRuleEntity> map = rules.stream().collect(
+                Collectors.toMap(DegradeRuleEntity::getId, (p) -> p));
+        return map.get(id);
+    }
+
+    private List<DegradeRuleEntity> deleteFlowRuleEntity(/*@NonNull*/ String app, Long id) throws Exception {
+        //需要设置id
+        List<DegradeRuleEntity> rules = ruleProvider.getRules(getRealPath(app));
+        rules.removeIf(p -> id.equals(p.getId()));//过滤30岁以上的求职者
+        return rules;
     }
 
     private String getRealPath(String app) {

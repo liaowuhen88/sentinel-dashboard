@@ -36,6 +36,7 @@ app.service('DegradeServiceV2', ['$http', function ($http) {
   this.saveRule = function (rule) {
     var param = {
       id: rule.id,
+      app:rule.app,
       resource: rule.resource,
       limitApp: rule.limitApp,
       grade: rule.grade,
